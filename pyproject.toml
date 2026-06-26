@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bemade-pre-commit-hooks"
+version = "0.1.0"
+description = "Bemade pre-commit / CI hooks for Odoo repos (manifest version-bump enforcement)"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "Bemade Inc.", email = "marc@bemade.org" }]
+license = { text = "LGPL-3.0-or-later" }
+keywords = ["odoo", "pre-commit", "versioning", "ci"]
+
+[project.urls]
+Homepage = "https://github.com/bemade/pre-commit-hooks"
+
+[project.scripts]
+bemade-check-version-bump = "bemade_pre_commit_hooks.check_bump:main"
+bemade-bump-version = "bemade_pre_commit_hooks.bump:main"
+
+[tool.setuptools]
+packages = ["bemade_pre_commit_hooks"]

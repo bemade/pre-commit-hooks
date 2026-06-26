@@ -1,0 +1,10 @@
+- id: check-manifest-version-bump
+  name: Odoo manifest version bumped when a module changes
+  description: >-
+    Blocks the commit if a module has staged changes but its __manifest__.py
+    version is not a strict increase over HEAD. Bump it with
+    `odoo-dev bump <module> <patch|minor|major>` (or `bemade-bump-version`).
+  entry: bemade-check-version-bump
+  language: python
+  pass_filenames: true
+  require_serial: true
