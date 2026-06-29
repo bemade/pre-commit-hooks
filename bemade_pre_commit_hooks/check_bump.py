@@ -2,9 +2,13 @@
 
 Read-only — it never modifies files. Two modes:
 
-* **pre-commit (default):** the staged change vs ``HEAD``. pre-commit passes the
-  staged filenames as argv; a module is "changed" if any of them lives under it,
-  and its staged manifest version must be a strict increase over HEAD's.
+* **pre-commit (default):** the staged change vs ``HEAD`` (``git diff --cached``).
+  A module is "changed" if any staged file lives under it, and its staged
+  manifest version must be a strict increase over HEAD's. The check **computes
+  its own diff** and ignores any filenames passed on argv — the hook is wired
+  ``pass_filenames: false`` precisely so that ``pre-commit run --all-files``
+  (which the OCA suite uses) doesn't hand it every file and make every module
+  look "changed". With nothing staged it is a harmless no-op.
 * **CI (``--against <ref>``):** the whole branch vs a base ref (e.g.
   ``origin/19.0``). Changed files come from ``git diff --name-only <ref>...HEAD``
   and the HEAD manifest version must beat the version on ``<ref>``.
@@ -37,30 +41,25 @@ def _git_text(revspec: str) -> Optional[str]:
         return None
 
 
-def _changed_files(against: Optional[str], argv_files: List[str]) -> List[str]:
+def _changed_files(against: Optional[str]) -> List[str]:
+    """Files changed in the relevant diff — always computed here, never taken
+    from argv (so ``--all-files`` can't make every file look "changed")."""
     if against:
-        out = subprocess.run(
-            ["git", "diff", "--name-only", f"{against}...HEAD"],
-            capture_output=True,
-            check=True,
-            text=True,
-        ).stdout
-        return [line for line in out.splitlines() if line.strip()]
-    if argv_files:
-        return argv_files
-    out = subprocess.run(
-        ["git", "diff", "--cached", "--name-only"],
-        capture_output=True,
-        check=True,
-        text=True,
-    ).stdout
+        revspec = f"{against}...HEAD"
+        cmd = ["git", "diff", "--name-only", revspec]
+    else:
+        cmd = ["git", "diff", "--cached", "--name-only"]  # staged vs HEAD
+    out = subprocess.run(cmd, capture_output=True, check=True, text=True).stdout
     return [line for line in out.splitlines() if line.strip()]
 
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument(
-        "files", nargs="*", help="changed files (pre-commit passes these)"
+        "files",
+        nargs="*",
+        help="accepted for pre-commit compatibility but IGNORED — the diff is "
+        "always computed internally (see module docstring)",
     )
     ap.add_argument(
         "--against",
@@ -69,7 +68,7 @@ def main(argv=None) -> int:
     )
     args = ap.parse_args(argv)
 
-    changed = _changed_files(args.against, args.files)
+    changed = _changed_files(args.against)
 
     modules: dict = {}
     for f in changed:

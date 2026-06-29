@@ -6,5 +6,12 @@
     `odoo-dev bump <module> <patch|minor|major>` (or `bemade-bump-version`).
   entry: bemade-check-version-bump
   language: python
-  pass_filenames: true
+  # The hook computes its own diff (staged-vs-HEAD), so it must NOT receive the
+  # file list pre-commit would otherwise pass. With pass_filenames=false +
+  # always_run, `pre-commit run --all-files` runs it once with no files; nothing
+  # is staged on a clean checkout, so it's a harmless no-op. (A naive
+  # pass_filenames=true would treat every file as "changed" under --all-files and
+  # flag every module — the OCA suite runs --all-files, so that matters.)
+  pass_filenames: false
+  always_run: true
   require_serial: true
