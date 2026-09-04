@@ -15,6 +15,14 @@ Read-only — it never modifies files. Two modes:
 
 A brand-new module (no manifest at the comparison ref) is exempt — its initial
 version stands.
+
+Paths under ``vendored/`` are exempt by default. Vendored addons are upstream
+code materialized from a lockfile (``addons.lock``): their versions belong to
+upstream, and re-pinning one to a newer upstream commit routinely changes its
+files while its version stays put. Demanding a bump there is unsatisfiable —
+editing the version would put ``vendored/`` out of sync with the lockfile and
+fail ``odoo-dev vendor check``, which is the real gate on those paths. Override
+with ``--exclude`` (repeatable; supplying any replaces the default).
 """
 
 from __future__ import annotations
@@ -26,6 +34,23 @@ from pathlib import Path
 from typing import List, Optional
 
 from ._manifest import find_module_root, is_increase, manifest_path, read_version
+
+#: Path prefixes skipped unless ``--exclude`` overrides them. See module docstring.
+DEFAULT_EXCLUDES = ("vendored",)
+
+
+def _is_excluded(path: Path, excludes) -> bool:
+    """True if ``path`` sits under any of the ``excludes`` directory prefixes.
+
+    Matches whole path segments, so ``vendored`` does not swallow
+    ``vendored_extra/``.
+    """
+    parts = path.parts
+    for prefix in excludes:
+        want = tuple(p for p in Path(prefix).parts if p not in ("", "."))
+        if want and parts[: len(want)] == want:
+            return True
+    return False
 
 
 def _git_text(revspec: str) -> Optional[str]:
@@ -66,13 +91,25 @@ def main(argv=None) -> int:
         metavar="REF",
         help="base ref to diff against (CI mode), e.g. origin/19.0",
     )
+    ap.add_argument(
+        "--exclude",
+        metavar="PREFIX",
+        action="append",
+        default=[],
+        help="directory prefix to skip, repeatable. Defaults to "
+        f"{'/, '.join(DEFAULT_EXCLUDES)}/; supplying any replaces the default.",
+    )
     args = ap.parse_args(argv)
+    excludes = args.exclude or list(DEFAULT_EXCLUDES)
 
     changed = _changed_files(args.against)
 
     modules: dict = {}
     for f in changed:
-        root = find_module_root(Path(f))
+        path = Path(f)
+        if _is_excluded(path, excludes):
+            continue
+        root = find_module_root(path)
         if root is None:
             continue
         mf = manifest_path(root)

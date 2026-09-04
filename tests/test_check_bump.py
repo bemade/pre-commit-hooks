@@ -62,3 +62,52 @@ def test_argv_is_ignored_only_staged_matters(repo):
     # passing all files OR none: same verdict, driven only by the staged diff.
     assert main(["mymod/__manifest__.py", "mymod/models.py"]) == 1
     assert main([]) == 1
+
+
+def _add_vendored_module(repo, path="vendored/upstream_mod"):
+    """Commit a module at ``path`` so later edits are 'changed, not new'."""
+    mod = repo / path
+    mod.mkdir(parents=True)
+    (mod / "__manifest__.py").write_text("{'name': 'Up', 'version': '19.0.1.0.0'}\n")
+    (mod / "models.py").write_text("y = 1\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "vendor")
+    return mod
+
+
+def test_vendored_change_without_bump_is_exempt(repo):
+    """A re-pin rewrites vendored files while upstream's version stays put.
+
+    Demanding a bump there is unsatisfiable: editing the version desyncs
+    vendored/ from addons.lock and fails `odoo-dev vendor check`.
+    """
+    mod = _add_vendored_module(repo)
+    (mod / "models.py").write_text("y = 2\n")
+    _git(repo, "add", "-A")
+    assert main([]) == 0
+
+
+def test_vendored_exemption_does_not_cover_sibling_prefix(repo):
+    """`vendored` must match a whole segment, not swallow `vendored_extra/`."""
+    mod = _add_vendored_module(repo, "vendored_extra/mod")
+    (mod / "models.py").write_text("y = 2\n")
+    _git(repo, "add", "-A")
+    assert main([]) == 1
+
+
+def test_non_vendored_module_still_checked_alongside_vendored(repo):
+    """An exempt path must not mask a real failure in the same commit."""
+    mod = _add_vendored_module(repo)
+    (mod / "models.py").write_text("y = 2\n")
+    (repo / "mymod" / "models.py").write_text("x = 9\n")
+    _git(repo, "add", "-A")
+    assert main([]) == 1
+
+
+def test_explicit_exclude_replaces_the_default(repo):
+    """Supplying --exclude replaces the default, so vendored/ is checked again."""
+    mod = _add_vendored_module(repo)
+    (mod / "models.py").write_text("y = 2\n")
+    _git(repo, "add", "-A")
+    assert main(["--exclude", "thirdparty"]) == 1
+    assert main(["--exclude", "vendored"]) == 0
