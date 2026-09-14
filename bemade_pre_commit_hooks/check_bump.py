@@ -23,6 +23,15 @@ files while its version stays put. Demanding a bump there is unsatisfiable —
 editing the version would put ``vendored/`` out of sync with the lockfile and
 fail ``odoo-dev vendor check``, which is the real gate on those paths. Override
 with ``--exclude`` (repeatable; supplying any replaces the default).
+
+**Documentation-only changes need no bump.** A bump follows a change in runtime
+behaviour; a README, a ``TODO.md``, an OCA ``readme/`` fragment or the rendered
+``static/description/index.html`` cannot change behaviour, so a module whose
+only changed files are prose is not "changed". The exempt set is deliberately
+narrow (``*.md``, ``*.rst``, ``readme/``, ``doc/``, ``static/description/``):
+``.txt`` can be a test fixture, and ``i18n/*.po`` or ``data/*.xml`` only load
+on a module *update* — which is precisely what the bump triggers. Disable with
+``--no-doc-exempt``.
 """
 
 from __future__ import annotations
@@ -37,6 +46,19 @@ from ._manifest import find_module_root, is_increase, manifest_path, read_versio
 
 #: Path prefixes skipped unless ``--exclude`` overrides them. See module docstring.
 DEFAULT_EXCLUDES = ("vendored",)
+
+#: Prose that cannot change runtime behaviour, relative to the module root.
+#: See the module docstring for what is deliberately NOT here.
+DOC_SUFFIXES = (".md", ".rst")
+DOC_DIRS = (("readme",), ("doc",), ("static", "description"))
+
+
+def _is_doc(path: Path, module_root: Path) -> bool:
+    """True if ``path`` is documentation within ``module_root``."""
+    if path.suffix.lower() in DOC_SUFFIXES:
+        return True
+    rel = path.relative_to(module_root).parts
+    return any(rel[: len(d)] == d for d in DOC_DIRS)
 
 
 def _is_excluded(path: Path, excludes) -> bool:
@@ -92,6 +114,12 @@ def main(argv=None) -> int:
         help="base ref to diff against (CI mode), e.g. origin/19.0",
     )
     ap.add_argument(
+        "--no-doc-exempt",
+        action="store_true",
+        help="require a bump even when a module's only changed files are "
+        "documentation (*.md, *.rst, readme/, doc/, static/description/)",
+    )
+    ap.add_argument(
         "--exclude",
         metavar="PREFIX",
         action="append",
@@ -111,6 +139,8 @@ def main(argv=None) -> int:
             continue
         root = find_module_root(path)
         if root is None:
+            continue
+        if not args.no_doc_exempt and _is_doc(path, root):
             continue
         mf = manifest_path(root)
         if mf is not None:

@@ -21,6 +21,17 @@ but its `__manifest__.py` version is not a strict increase over `HEAD`. The same
 tool runs in CI against the target branch to catch anything that slipped past
 the local hook (e.g. `git commit -n`).
 
+Two kinds of change are exempt, because a bump follows a change in *runtime
+behaviour*:
+
+- **`vendored/`** — upstream code pinned by a lockfile; its versions are not
+  yours to bump (`--exclude` overrides the prefix list).
+- **Documentation** — a module whose only changed files are `*.md`, `*.rst`,
+  or anything under `readme/`, `doc/` or `static/description/` is not
+  "changed". The set is deliberately narrow: `.txt` can be a test fixture, and
+  `i18n/*.po` or `data/*.xml` only load on a module update, which is exactly
+  what the bump triggers. `--no-doc-exempt` restores the strict behaviour.
+
 ## Use it (local pre-commit)
 
 In a project repo's `.pre-commit-config.yaml`:
