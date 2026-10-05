@@ -172,3 +172,43 @@ def test_no_doc_exempt_flag_restores_strict_behaviour(repo):
     (repo / "mymod" / "README.md").write_text("prose\n")
     _git(repo, "add", "-A")
     assert main(["--no-doc-exempt"]) == 1
+
+
+def _commit_mymod_bump(repo, msg):
+    (repo / "mymod" / "models.py").write_text("x = 2\n")
+    (repo / "mymod" / "__manifest__.py").write_text(
+        "{'name': 'My', 'version': '1.0.1'}\n"
+    )
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", msg)
+
+
+def _diverged_target(repo):
+    """``staging`` and ``main`` both carry the same mymod bump, landed through
+    different commits, so their merge base predates it. A branch cut from
+    ``main`` then sees mymod in ``staging...HEAD`` without changing it."""
+    _git(repo, "branch", "staging")
+    _commit_mymod_bump(repo, "bump on main")
+    _git(repo, "checkout", "-q", "staging")
+    _commit_mymod_bump(repo, "same bump on staging")
+    _git(repo, "checkout", "-q", "main")
+    _git(repo, "checkout", "-qb", "feature")
+
+
+def test_module_identical_to_target_is_not_changed(repo):
+    """The stale-merge-base false positive: nothing to bump on the target."""
+    _diverged_target(repo)
+    (repo / "other").mkdir()
+    (repo / "other" / "__manifest__.py").write_text("{'version': '1.0.0'}\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "unrelated new module")
+    assert main(["--against", "staging"]) == 0
+
+
+def test_module_differing_from_target_still_needs_bump(repo):
+    """The guard only skips identical trees: a real change is still checked."""
+    _diverged_target(repo)
+    (repo / "mymod" / "models.py").write_text("x = 3\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "real change, no bump")
+    assert main(["--against", "staging"]) == 1
