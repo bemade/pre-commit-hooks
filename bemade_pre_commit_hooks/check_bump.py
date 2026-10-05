@@ -11,7 +11,9 @@ Read-only — it never modifies files. Two modes:
   look "changed". With nothing staged it is a harmless no-op.
 * **CI (``--against <ref>``):** the whole branch vs a base ref (e.g.
   ``origin/19.0``). Changed files come from ``git diff --name-only <ref>...HEAD``
-  and the HEAD manifest version must beat the version on ``<ref>``.
+  and the HEAD manifest version must beat the version on ``<ref>``. A module
+  whose tree is identical at ``<ref>`` and ``HEAD`` is skipped: with
+  criss-cross merges the merge base can predate a change both sides carry.
 
 A brand-new module (no manifest at the comparison ref) is exempt — its initial
 version stands.
@@ -100,6 +102,14 @@ def _changed_files(against: Optional[str]) -> List[str]:
     return [line for line in out.splitlines() if line.strip()]
 
 
+def _same_tree(ref: str, root) -> bool:
+    """True if ``root`` is byte-identical at ``ref`` and ``HEAD``."""
+    return subprocess.run(
+        ["git", "diff", "--quiet", ref, "HEAD", "--", str(root)],
+        capture_output=True,
+    ).returncode == 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument(
@@ -145,6 +155,16 @@ def main(argv=None) -> int:
         mf = manifest_path(root)
         if mf is not None:
             modules[root] = mf
+
+    if args.against:
+        # A module identical on the target and HEAD has nothing to bump, even
+        # when ``<ref>...HEAD`` lists it: with criss-cross merges (a feature
+        # branch cut from production, merged into staging) the merge base can
+        # predate a change both branches already carry.
+        modules = {
+            root: mf for root, mf in modules.items()
+            if not _same_tree(args.against, root)
+        }
 
     old_ref = args.against or "HEAD"
     failures = []
